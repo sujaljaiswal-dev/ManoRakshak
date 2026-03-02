@@ -53,7 +53,7 @@ export default function Layout() {
             <span>🌿</span>
           </div>
           <div className="logo-text">
-            <h2>ManoRakshak</h2>
+            <h2>ManoRakshak 1.1</h2>
             {isIncognito && <span className="incognito-badge">Incognito</span>}
           </div>
         </div>

@@ -23,8 +23,9 @@
   z-index: 100;
   animation: fadeInLeft 0.45s var(--spring) both;
   transition: transform 0.38s cubic-bezier(0.34, 1.56, 0.64, 1);
-  overflow-y: scroll;
+  overflow-y: auto;
   overflow-x: hidden;
+  overscroll-behavior: contain;
 }
 
 /* Moving gradient right border */
@@ -455,13 +456,15 @@
     bottom: 0;
     /* Forces the sidebar to span the full vertical space */
     height: 100dvh;
-    /* Uses the dynamic viewport height for mobile */
     padding-top: 1.25rem;
-    padding-bottom: 2rem;
-    /* Add extra space at the bottom for logout */
+    padding-bottom: 3rem;
+    /* More space at the bottom */
     overflow-y: auto;
-    /* 'auto' is usually safer than 'scroll' */
+    overflow-x: hidden;
+    overscroll-behavior: contain;
     -webkit-overflow-scrolling: touch;
+    display: flex;
+    flex-direction: column;
   }
 
   .sidebar.sidebar-mobile-open {
@@ -518,5 +521,14 @@
 
   .sidebar-bottom {
     gap: 0.5rem;
+    margin-top: 1.5rem;
+    /* Ensure it doesn't just stick to bottom if content is long */
+    flex-shrink: 0;
+    /* Don't let the controls section shrink */
+  }
+
+  .nav-links {
+    flex: 1;
+    /* Allow nav links to take their natural height on mobile for better scrolling */
   }
 }
