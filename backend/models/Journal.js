@@ -6,6 +6,10 @@ const journalSchema = new mongoose.Schema({
     ref: 'User',
     required: true,
   },
+  username: {
+    type: String,
+    required: true,
+  },
   date: {
     type: String, // YYYY-MM-DD
     required: true,

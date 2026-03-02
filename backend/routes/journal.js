@@ -58,7 +58,7 @@ router.post('/generate', protect, async (req, res) => {
     // Upsert journal entry
     const journal = await Journal.findOneAndUpdate(
       { userId: req.user._id, date: today },
-      { content: journalContent, mood, stressScore: Math.round(avgStress), aiSummary: journalContent },
+      { username: req.user.username, content: journalContent, mood, stressScore: Math.round(avgStress), aiSummary: journalContent },
       { upsert: true, new: true }
     );
 
@@ -97,7 +97,7 @@ router.post('/manual', protect, async (req, res) => {
 
     const journal = await Journal.findOneAndUpdate(
       { userId: req.user._id, date: today },
-      { content, mood },
+      { username: req.user.username, content, mood },
       { upsert: true, new: true }
     );
     res.json(journal);

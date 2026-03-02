@@ -6,6 +6,10 @@ const messageSchema = new mongoose.Schema({
     ref: 'User',
     required: true,
   },
+  username: {
+    type: String,
+    required: true,
+  },
   role: {
     type: String,
     enum: ['user', 'assistant'],

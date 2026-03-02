@@ -43,67 +43,260 @@ export default function Chat() {
   const streamRef = useRef(null);
   const transcriptTextRef = useRef('');
   const sendMessageRef = useRef(null);
+  const chunkSpeechRef = useRef({ isActive: false, chunkIndex: 0, totalChunks: 0 });
+
+  // Helper function to split long text into chunks for speech synthesis
+  const splitTextIntoChunks = (text, maxChunkLength = 500) => {
+    const chunks = [];
+    let currentChunk = '';
+
+    // Split by sentences (., !, ?, line breaks)
+    const sentences = text.match(/[^.!?।\n]+[.!?।]?/g) || [text];
+
+    for (let sentence of sentences) {
+      sentence = sentence.trim();
+      if (!sentence) continue;
+
+      // If adding this sentence exceeds limit, save current chunk and start new one
+      if ((currentChunk + ' ' + sentence).length > maxChunkLength) {
+        if (currentChunk) chunks.push(currentChunk.trim());
+        currentChunk = sentence;
+      } else {
+        currentChunk += ' ' + sentence;
+      }
+    }
+
+    if (currentChunk) chunks.push(currentChunk.trim());
+    return chunks;
+  };
+
+  // Speak text in chunks if it's too long
+  const speakInChunks = useCallback((text, chunks = null) => {
+    if (!text) return;
+
+    const textChunks = chunks || splitTextIntoChunks(text);
+
+    if (textChunks.length === 0) return;
+
+    // Cancel any ongoing speech
+    window.speechSynthesis.cancel();
+    chunkSpeechRef.current = { isActive: true, chunkIndex: 0, totalChunks: textChunks.length };
+
+    let timeoutId = null;
+    let chunkIndex = 0;
+
+    const speakNextChunk = () => {
+      // Check if speech was cancelled
+      if (!chunkSpeechRef.current.isActive) {
+        console.log('🛑 Speech cancelled');
+        setIsSpeaking(false);
+        return;
+      }
+
+      if (chunkIndex >= textChunks.length) {
+        console.log('✅ All chunks finished');
+        chunkSpeechRef.current.isActive = false;
+        setIsSpeaking(false);
+        return;
+      }
+
+      const chunk = textChunks[chunkIndex];
+      console.log(`🔊 Speaking chunk ${chunkIndex + 1}/${textChunks.length}: ${chunk.substring(0, 50)}...`);
+
+      const utterance = new SpeechSynthesisUtterance(chunk);
+      const langMap = {
+        english: 'en-US',
+        hindi: 'hi-IN'
+      };
+
+      const preferredLang = user?.languagePreference || 'english';
+      utterance.lang = langMap[preferredLang] || 'en-US';
+
+      // Set rate for Hindi
+      if (preferredLang === 'hindi') {
+        utterance.rate = 0.9;
+      } else {
+        utterance.rate = 1.0;
+      }
+      utterance.pitch = 1.0;
+      utterance.volume = 1.0;
+
+      // Select voice
+      const voices = window.speechSynthesis.getVoices();
+      if (voices.length > 0) {
+        selectBestVoice(voices, preferredLang, utterance);
+      }
+
+      utterance.onstart = () => {
+        console.log('🎤 Chunk started');
+        setIsSpeaking(true);
+      };
+
+      utterance.onend = () => {
+        console.log('✅ Chunk ended');
+        chunkIndex++;
+        chunkSpeechRef.current.chunkIndex = chunkIndex;
+
+        // Schedule next chunk only if still active
+        if (chunkSpeechRef.current.isActive) {
+          timeoutId = setTimeout(speakNextChunk, 200);
+        }
+      };
+
+      utterance.onerror = (event) => {
+        console.error('❌ Chunk error:', event.error);
+        chunkIndex++;
+        chunkSpeechRef.current.chunkIndex = chunkIndex;
+
+        if (chunkSpeechRef.current.isActive) {
+          timeoutId = setTimeout(speakNextChunk, 200);
+        }
+      };
+
+      try {
+        window.speechSynthesis.speak(utterance);
+      } catch (error) {
+        console.error('❌ Error speaking chunk:', error);
+        chunkIndex++;
+        chunkSpeechRef.current.chunkIndex = chunkIndex;
+
+        if (chunkSpeechRef.current.isActive) {
+          timeoutId = setTimeout(speakNextChunk, 200);
+        }
+      }
+    };
+
+    // Start speaking first chunk
+    speakNextChunk();
+
+    // Cleanup function to cancel timeouts
+    return () => {
+      chunkSpeechRef.current.isActive = false;
+      if (timeoutId) clearTimeout(timeoutId);
+      window.speechSynthesis.cancel();
+    };
+  }, [user?.languagePreference]);
 
   // Define speak first (used by sendMessage)
   const speak = useCallback((text) => {
-    // Don't speak on slow connections
-    if (isSlowConnection) return;
+    if (!text) return;
 
-    window.speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(text);
+    // Don't speak on slow connections
+    if (isSlowConnection) {
+      console.log('⚠️ Voice output disabled on slow connections');
+      return;
+    }
+
+    console.log('🔊 Starting voice output for:', text.substring(0, 50) + '...');
+
+    // For long text, use chunk speaking
+    if (text.length > 500) {
+      console.log('📝 Text is long, splitting into chunks');
+      speakInChunks(text);
+    } else {
+      // For short text, use simple speak
+      window.speechSynthesis.cancel();
+
+      const utterance = new SpeechSynthesisUtterance(text);
+      const langMap = {
+        english: 'en-US',
+        hindi: 'hi-IN'
+      };
+
+      const preferredLang = user?.languagePreference || 'english';
+      utterance.lang = langMap[preferredLang] || 'en-US';
+
+      // Optimize voice settings for natural accent
+      if (preferredLang === 'hindi') {
+        utterance.rate = 0.9;
+        utterance.pitch = 1.0;
+        utterance.volume = 1.0;
+      } else {
+        utterance.rate = 1.0;
+        utterance.pitch = 1.0;
+        utterance.volume = 1.0;
+      }
+
+      // Wait for voices to load if needed
+      let voices = window.speechSynthesis.getVoices();
+
+      // If no voices yet, wait for them to load
+      if (voices.length === 0) {
+        console.log('⏳ Voices not ready, waiting...');
+        window.speechSynthesis.onvoiceschanged = () => {
+          voices = window.speechSynthesis.getVoices();
+          if (voices.length > 0) {
+            selectBestVoice(voices, preferredLang, utterance);
+          }
+        };
+      } else {
+        selectBestVoice(voices, preferredLang, utterance);
+      }
+
+      utterance.onstart = () => {
+        console.log('🎤 Voice started');
+        setIsSpeaking(true);
+      };
+      utterance.onerror = (event) => {
+        console.error('❌ Speech synthesis error:', event.error);
+        setIsSpeaking(false);
+      };
+      utterance.onend = () => {
+        console.log('✅ Voice ended');
+        setIsSpeaking(false);
+      };
+
+      try {
+        window.speechSynthesis.speak(utterance);
+        console.log('✅ Speaking:', text.substring(0, 50));
+      } catch (error) {
+        console.error('❌ Error speaking:', error);
+        setIsSpeaking(false);
+      }
+    }
+  }, [user?.languagePreference, isSlowConnection, speakInChunks]);
+
+  // Helper function to select best voice
+  const selectBestVoice = (voices, preferredLang, utterance) => {
     const langMap = {
       english: 'en-US',
       hindi: 'hi-IN'
     };
-    utterance.lang = langMap[user?.languagePreference] || 'en-US';
+    const langCode = langMap[preferredLang] || 'en-US';
 
-    // Optimize voice settings for natural Indian accent
-    if (user?.languagePreference === 'hindi') {
-      utterance.rate = 0.9;
-      utterance.pitch = 1.0;
-      utterance.volume = 1.0;
-    } else {
-      utterance.rate = 1.0;
-      utterance.pitch = 1.0;
-      utterance.volume = 1.0;
+    // Try to find exact language match
+    let selectedVoice = voices.find(voice =>
+      voice.lang === langCode && voice.name.toLowerCase().includes('india')
+    );
+
+    // If not found, try language family match
+    if (!selectedVoice) {
+      selectedVoice = voices.find(voice => voice.lang.startsWith(langCode.split('-')[0]));
     }
 
-    // Get all available voices and select the best match
-    const voices = window.speechSynthesis.getVoices();
-    if (voices.length > 0) {
-      const langCode = langMap[user?.languagePreference] || 'en-US';
-
-      // First, try to find exact language match (prioritize native speakers)
-      let selectedVoice = voices.find(voice =>
-        voice.lang === langCode && voice.name.toLowerCase().includes('india')
-      );
-
-      // If not found, try language family match
-      if (!selectedVoice) {
-        selectedVoice = voices.find(voice => voice.lang.startsWith(langCode.split('-')[0]));
-      }
-
-      // Last resort: try any voice that supports the language
-      if (!selectedVoice) {
-        selectedVoice = voices.find(voice => voice.lang.includes(langCode.split('-')[0]));
-      }
-
-      if (selectedVoice) {
-        utterance.voice = selectedVoice;
-        console.log('✅ Using voice:', selectedVoice.name, 'Language:', selectedVoice.lang);
-      } else {
-        console.warn('⚠️ No optimal voice found for', langCode, '. Using system default.');
-      }
+    // Last resort: try any voice that supports the language
+    if (!selectedVoice) {
+      selectedVoice = voices.find(voice => voice.lang.includes(langCode.split('-')[0]));
     }
 
-    utterance.onstart = () => setIsSpeaking(true);
-    utterance.onerror = (event) => {
-      console.error('Speech synthesis error:', event.error);
-      setIsSpeaking(false);
-    };
-    utterance.onend = () => setIsSpeaking(false);
-    window.speechSynthesis.speak(utterance);
-  }, [user?.languagePreference, isSlowConnection]);
+    // If still nothing, use the first voice
+    if (!selectedVoice) {
+      selectedVoice = voices[0];
+      console.warn('⚠️ Using default system voice');
+    }
+
+    if (selectedVoice) {
+      utterance.voice = selectedVoice;
+      console.log('✅ Using voice:', selectedVoice.name, 'Language:', selectedVoice.lang);
+    }
+  };
+
+  // Function to clean asterisks from text for better display and voice output
+  const cleanResponseText = (text) => {
+    if (!text) return text;
+    // Remove all asterisks (single and double)
+    return text.replace(/\*\*/g, '').replace(/\*/g, '');
+  };
 
   // Define sendMessage (uses speak)
   const sendMessage = useCallback(async (text) => {
@@ -121,10 +314,11 @@ export default function Chat() {
         isIncognito,
         conversationHistory: history,
       });
-      const aiMsg = { role: 'assistant', content: res.data.response, time: new Date() };
+      const cleanedResponse = cleanResponseText(res.data.response);
+      const aiMsg = { role: 'assistant', content: cleanedResponse, time: new Date() };
       setMessages(prev => [...prev, aiMsg]);
       setStressScore(res.data.stressScore || 0);
-      if (speechOutput) speak(res.data.response);
+      if (speechOutput) speak(cleanedResponse);
     } catch {
       setMessages(prev => [...prev, { role: 'assistant', content: 'I\'m having trouble connecting. Please try again.', time: new Date() }]);
     } finally {
@@ -153,9 +347,14 @@ export default function Chat() {
 
     // Ensure voices are loaded for speech synthesis
     if (window.speechSynthesis) {
-      window.speechSynthesis.onvoiceschanged = () => {
-        window.speechSynthesis.getVoices();
+      const preloadVoices = () => {
+        const voices = window.speechSynthesis.getVoices();
+        if (voices.length > 0) {
+          console.log('✅ Voices loaded:', voices.length, 'voices available');
+        }
       };
+      preloadVoices();
+      window.speechSynthesis.onvoiceschanged = preloadVoices;
     }
   }, [isIncognito, user?.languagePreference]);
 
@@ -169,7 +368,7 @@ export default function Chat() {
 
     setRecognitionSupported(true);
     const recognition = new SpeechRecognition();
-    recognition.continuous = false;
+    recognition.continuous = true;
     recognition.interimResults = true;
     recognition.lang = user?.languagePreference === 'hindi' ? 'hi-IN' : 'en-US';
 
@@ -193,7 +392,7 @@ export default function Chat() {
       const trimmedTranscript = transcript.trim();
       transcriptTextRef.current = trimmedTranscript;
       setTranscriptText(trimmedTranscript);
-      console.log('📝 Transcript:', trimmedTranscript);
+      console.log('📝 Transcript:', trimmedTranscript, 'Length:', trimmedTranscript.length);
     };
 
     recognition.onerror = (event) => {
@@ -445,7 +644,12 @@ export default function Chat() {
               </div>
             )}
             {isSpeaking && (
-              <button className="toolbar-btn active" onClick={() => window.speechSynthesis.cancel()}>
+              <button className="toolbar-btn active" onClick={() => {
+                console.log('🛑 Stopping speech');
+                chunkSpeechRef.current.isActive = false;
+                window.speechSynthesis.cancel();
+                setIsSpeaking(false);
+              }}>
                 🔇 Stop Speaking
               </button>
             )}

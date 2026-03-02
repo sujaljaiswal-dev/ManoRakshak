@@ -23,6 +23,8 @@
   z-index: 100;
   animation: fadeInLeft 0.45s var(--spring) both;
   transition: transform 0.38s cubic-bezier(0.34, 1.56, 0.64, 1);
+  overflow-y: scroll;
+  overflow-x: hidden;
 }
 
 /* Moving gradient right border */

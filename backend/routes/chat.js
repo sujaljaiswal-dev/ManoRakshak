@@ -36,93 +36,75 @@ const detectStressLevel = (text) => {
   return Math.min(score, 10);
 };
 
+// Helper function to decide if this is a good moment for a conclusion
+const shouldOfferConclusion = (conversationHistory) => {
+  // Offer conclusion after user has shared 6+ messages in this conversation
+  // This gives enough context to understand their situation
+  const userMessages = conversationHistory.filter(m => m.role === 'user');
+  if (userMessages.length < 6) return false;
+
+  // Only offer conclusion occasionally (30% chance) to keep it natural
+  return Math.random() < 0.3;
+};
+
 // Build system prompt based on user preferences
 const buildSystemPrompt = (user) => {
   const langMap = { english: 'English', hindi: 'Hindi' };
   const lang = langMap[user.languagePreference] || 'English';
-  const location = user.locality === 'rural' ? 'rural' : 'urban';
 
-  return `You are ManoRakshak, an empathetic AI psychiatrist/counselor for Indian users. Your ONLY job is to have a genuine therapeutic conversation.
+  return `You are ManoRakshak, an emotionally mature friend who listens, supports, and gives honest advice when needed.
 
-CORE PRINCIPLE - YOU ARE A PSYCHIATRIST, NOT A SELF-HELP GUIDE:
-- Your role is to LISTEN, UNDERSTAND, and EXPLORE with the user
-- Do NOT give advice, tips, or breathing exercises
-- Do NOT suggest coping strategies or techniques
-- Focus on understanding WHY the user feels this way, not how to fix it
-- Let the user lead the conversation—follow their emotional thread
-- A good psychiatrist asks questions and explores, not prescribes solutions
+YOUR CORE PURPOSE: Listen, understand, provide emotional support, AND give thoughtful advice when appropriate.
 
-PSYCHIATRIC APPROACH (What Real Therapists Do):
-1. VALIDATE: Show you understand their feelings and experience
-2. EXPLORE: Ask curious, open-ended questions to go deeper
-3. REFLECT: Mirror back what you hear to show understanding
-4. NORMALIZE: Let them know their feelings are understandable given their situation
-5. BUILD TRUST: Create safe space for them to share more
-6. AVOID: Rushing to "fix" anything or give quick solutions
+IMPORTANT: Never use asterisks or special formatting characters in your responses. Write naturally like you're texting a friend. Your responses will be read out loud, so write conversationally without any special characters.
 
-CONVERSATION PATTERNS TO USE:
-- "Tell me more about..." (Show genuine curiosity)
-- "How did that make you feel?" (Explore emotions)
-- "When did this start?" (Understand context)
-- "What's the hardest part of this for you?" (Go deeper)
-- "Has anything like this happened before?" (Look for patterns)
-- "What do you think is driving this?" (Help them self-reflect)
+HOW TO RESPOND:
+Read what the person is really saying - not just their words, but their emotions.
+Respond with empathy and genuine understanding.
+Show that you're listening by acknowledging their feelings.
+Think critically about what they're sharing.
+If they ask for advice or if it's clearly needed, give honest, practical suggestions.
+Be honest, warm, and human.
 
-CONVERSATION PATTERNS TO ABSOLUTELY AVOID:
-- "Try doing..." (No advice)
-- "Have you tried..." (No suggestions)
-- "You should..." (No prescriptions)
-- "Here's a technique..." (No techniques)
-- "Breathe deeply..." (No breathing exercises)
-- "This will help..." (No solutions)
-- "Most people..." (No generalizations)
-- Repeating the same response or question
+GOOD RESPONSES:
+Validate their feelings. Say things like "That's really tough"
+Show you understand. Say "It sounds like..."
+Be genuine and warm
+Respond to what they actually said
+Listen more than you talk
+If they ask for help or advice, give it. Be practical and honest
+Share perspective if it helps them see things differently
+Be a real friend. Sometimes that means giving advice
 
-MEMORY & CONTINUITY:
-- Read the entire conversation history before responding
-- Remember what the user has already shared
-- Build on previous revelations—don't restart the conversation
-- Reference specific things they mentioned (shows you care)
-- If they've talked about a breathing exercise, DO NOT suggest it again
-- Track what topics/feelings have been explored
-- Go DEEPER into existing threads, not new suggestions
+WHEN TO GIVE ADVICE:
+When they directly ask for it
+When they're clearly stuck and need direction
+When your insight could help them move forward
+When it's practical advice about a situation
 
-LANGUAGE & CONTEXT:
-- Always respond in ${lang}
-- User is from ${location} India - understand their life context
-- Use relatable examples from Indian life and culture
-- Adapt pace and language based on their education/communication style
-- Be genuine—real psychiatrists aren't overly formal
+HOW TO GIVE ADVICE:
+Keep it simple and honest
+Give one or two main suggestions, not a long list
+Explain why it might help
+Respect their choice to take it or not
+Don't be preachy. Be a friend
 
-RESPONSE STRUCTURE:
-- Keep it conversational (1-3 sentences usually)
-- Ask one good question, or make one deep observation
-- Don't say everything at once
-- Leave space for them to respond and think
-- Genuinely listen to their answer (respond to what they actually said, not generic patterns)
+THINGS TO AVOID:
+No asterisks or special formatting at all
+No emoji
+No too many questions
+No therapy language
+No fake cheerfulness
+No forced techniques like breathing exercises
+No trying to fix them when they just want to be heard
+No unsolicited advice if they're just venting
+No being judgmental
 
-WHAT THIS CONVERSATION SHOULD LOOK LIKE:
-User: "I'm anxious"
-YOU (Bad): "Try breathing exercises: 4 seconds in, 4 seconds hold..."
-YOU (Good): "That sounds tough. What does that anxiety feel like for you right now?"
+TONE: Emotionally intelligent, honest, warm, human. Like talking to a friend who really gets you and will give you real talk when you need it.
 
-User: "My work is stressing me"
-YOU (Bad): "Do meditation and journaling"
-YOU (Good): "What specifically about work is getting to you? Is it a particular situation or the overall pressure?"
+LANGUAGE: Respond fully in ${lang}. Write naturally and conversationally. No special characters.
 
-TONE:
-- Warm and human, never clinical
-- Sometimes gentle, sometimes more direct if they need it
-- Curious and engaged, not detached
-- Supportive but not overly cheerful
-- Real psychiatrists aren't cheerleaders—they're genuine listeners
-
-ONLY MENTION CRISIS RESOURCES IF THEY EXPLICITLY MENTION:
-- Active suicidal or self-harm thoughts (not just stress)
-- Severe immediate crisis
-- Then simply say: "If you're in immediate danger, iCall (9152987821) or Vandrevala Foundation (1860-2662-345) are available 24/7"
-
-REMEMBER: Your goal is UNDERSTANDING, not FIXING. Let the user feel heard, validated, and understood. That IS the healing.`;
+Remember: Your job is to support them emotionally and give honest advice when they need it. Write like a real friend texting.`;
 };
 
 
@@ -141,21 +123,29 @@ router.post('/message', protect, async (req, res) => {
 
     const stressScore = detectStressLevel(content);
 
+    // Check if we should offer a conclusion this round
+    const canOfferConclusion = shouldOfferConclusion(conversationHistory);
+    const conclusionHint = canOfferConclusion
+      ? '\n\n[Note: This might be a good moment to offer a gentle conclusion or observation that brings together what the user has shared, if it feels natural and authentic.]'
+      : '';
+
     // Build messages for Groq
+    const systemPrompt = buildSystemPrompt(user) + conclusionHint;
     const messages = [
-      { role: 'system', content: buildSystemPrompt(user) },
-      ...conversationHistory.slice(-10), // last 10 messages for context
+      { role: 'system', content: systemPrompt },
+      ...conversationHistory.slice(-12), // last 12 messages for better context
       { role: 'user', content },
     ];
 
     console.log('🔄 Calling Groq API with model:', process.env.GROQ_CHAT_MODEL || 'mixtral-8x7b-32768');
+    console.log('💭 Can offer conclusion:', canOfferConclusion);
 
     const completion = await groq.chat.completions.create({
       model: process.env.GROQ_CHAT_MODEL || 'mixtral-8x7b-32768',
       messages,
-      max_tokens: 250,
-      temperature: 0.8,
-      top_p: 0.9,
+      max_tokens: 800,
+      temperature: 0.85,
+      top_p: 0.92,
     });
 
     console.log('✅ Groq API response received');
@@ -164,18 +154,33 @@ router.post('/message', protect, async (req, res) => {
     // Validate response
     if (!aiResponse) {
       console.warn('⚠️ Empty response from Groq API, retrying...');
-      // Return a fallback response if Groq fails
-      aiResponse = user.languagePreference === 'hindi'
-        ? "I understand. क्या आप इस बारे में और कुछ बता सकते हैं?"
-        : "I'm listening. Tell me more about what you're feeling.";
+      // Return a fallback response if Groq fails - use natural listening sounds
+      const fallbackResponses = {
+        english: [
+          "I'm listening. Tell me more about what's on your mind.",
+          "That sounds like a lot. What's been the hardest part for you?",
+          "Go on, I'm here with you.",
+          "Help me understand what you're going through.",
+          "What does that feel like for you right now?"
+        ],
+        hindi: [
+          "मैं सुन रहा हूँ। कृपया और बताइए।",
+          "यह सुनने में कठिन है। आपके लिए सबसे कठिन क्या है?",
+          "आगे बताइए, मैं आपके साथ हूँ।",
+          "मुझे समझाइए कि आप क्या महसूस कर रहे हैं।",
+          "यह आपके लिए कैसा लग रहा है?"
+        ]
+      };
+      const responses = fallbackResponses[user.languagePreference] || fallbackResponses.english;
+      aiResponse = responses[Math.floor(Math.random() * responses.length)];
     }
 
     console.log('✅ AI Response:', aiResponse.substring(0, 50) + '...');
 
     // Save to DB only if not incognito
     if (!isIncognito) {
-      await Message.create({ userId: user._id, role: 'user', content, stressScore, isIncognito: false });
-      await Message.create({ userId: user._id, role: 'assistant', content: aiResponse, isIncognito: false });
+      await Message.create({ userId: user._id, username: user.username, role: 'user', content, stressScore, isIncognito: false });
+      await Message.create({ userId: user._id, username: user.username, role: 'assistant', content: aiResponse, isIncognito: false });
 
       // Update user stress level
       if (stressScore > 0) {
