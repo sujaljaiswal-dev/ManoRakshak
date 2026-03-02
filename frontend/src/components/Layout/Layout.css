@@ -444,18 +444,23 @@
 
 /* ── Mobile (≤ 768px) ─────────────────────────── */
 @media (max-width: 768px) {
-
-  /* Kill desktop fade-in animation so transform works */
   .sidebar {
     animation: none !important;
     transform: translateX(-100%);
     width: 280px;
     z-index: 300;
+    position: fixed;
+    /* Ensure it is fixed to the viewport */
     top: 0;
-    /* bottom: 0; */
-    height: calc(100vh - 56px);
+    bottom: 0;
+    /* Forces the sidebar to span the full vertical space */
+    height: 100dvh;
+    /* Uses the dynamic viewport height for mobile */
     padding-top: 1.25rem;
-    overflow-y: scroll;
+    padding-bottom: 2rem;
+    /* Add extra space at the bottom for logout */
+    overflow-y: auto;
+    /* 'auto' is usually safer than 'scroll' */
     -webkit-overflow-scrolling: touch;
   }
 
